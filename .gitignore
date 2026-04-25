@@ -1,0 +1,45 @@
+# --- Python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Virtualenvs -----------------------------------------------------------
+.venv/
+venv/
+env/
+
+# --- PyInstaller / build artifacts ----------------------------------------
+build/
+dist/
+_build_cache/
+*.spec
+
+# --- LightStats runtime data (portable, lives next to the .exe) -----------
+config.json
+history.db
+history.db-shm
+history.db-wal
+crash.log
+
+# --- IDE / editor ---------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# --- Local / temp ---------------------------------------------------------
+*.log
+*.zip
+*.bak
+*.tmp
+temp/
+
+# --- Tooling state --------------------------------------------------------
+.claude/
