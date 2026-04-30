@@ -123,6 +123,11 @@ class SystemWorker(QObject):
 
         self._last_net: Optional[tuple[float, int, int]] = None  # (ts, recv, sent)
         self._last_disk: Optional[tuple[float, int, int]] = None
+        # Cache for active-interface lookup. Each lookup makes 3 psutil calls
+        # and walks every NIC; refreshing once every few seconds is plenty
+        # for a label that just shows the user "you're on Wi-Fi."
+        self._iface_cache: Optional[tuple[float, Optional[str], Optional[float]]] = None
+        self._iface_ttl_s = 5.0
 
     def stop(self) -> None:
         self._stop = True
@@ -157,8 +162,16 @@ class SystemWorker(QObject):
         except Exception:
             pass
 
-        active = _pick_active_interface()
-        s.net_adapter, s.net_link_mbps = _adapter_info(active)
+        # Cache the adapter lookup — psutil.net_if_* are surprisingly slow
+        # on Windows when many virtual adapters are present.
+        if (
+            self._iface_cache is None
+            or now - self._iface_cache[0] > self._iface_ttl_s
+        ):
+            active = _pick_active_interface()
+            adapter_name, adapter_speed = _adapter_info(active)
+            self._iface_cache = (now, adapter_name, adapter_speed)
+        _, s.net_adapter, s.net_link_mbps = self._iface_cache
 
         # Disk I/O
         try:

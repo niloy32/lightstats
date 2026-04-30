@@ -13,6 +13,7 @@ import subprocess
 import sys
 import time
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Deque, Optional
 
@@ -209,6 +210,10 @@ class PingWorker(QObject):
         self.stats = [ServerStats(name=n, host=h, window=window) for n, h in servers]
         self._stop = False
         self._persist = persist
+        # Parallelism cap: more than ~8 simultaneous ping subprocesses gives
+        # diminishing returns and bothers some firewalls. Most users have ≤3
+        # servers anyway.
+        self._max_parallel = min(max(1, len(self.stats)), 8)
 
     def stop(self) -> None:
         self._stop = True
@@ -228,19 +233,36 @@ class PingWorker(QObject):
                 log.exception("Ping worker: db.connect failed, persistence off: %s", e)
                 conn = None
 
+        # Parallel ping pool: each tick fires every host concurrently so a
+        # slow gateway doesn't delay the round (and the per-tick UI update).
+        pool = ThreadPoolExecutor(
+            max_workers=self._max_parallel,
+            thread_name_prefix="ping",
+        )
+
+        def _safe_ping(host: str) -> Optional[float]:
+            try:
+                return ping_once(host)
+            except Exception as e:
+                log.warning("ping_once(%s) raised: %s", host, e)
+                return None
+
         try:
             while not self._stop:
                 try:
                     ts = time.time()
+                    # Submit all pings in one shot; collect results in order.
+                    futures = [pool.submit(_safe_ping, s.host) for s in self.stats]
                     rows = []
-                    for s in self.stats:
+                    for s, fut in zip(self.stats, futures):
                         if self._stop:
                             break
                         try:
-                            rtt = ping_once(s.host)
+                            # Cap at slightly over the per-ping timeout so a
+                            # hung subprocess can't stall the loop forever.
+                            rtt = fut.result(timeout=4.0)
                         except Exception as e:
-                            # A single host's failure shouldn't halt the loop.
-                            log.warning("ping_once(%s) raised: %s", s.host, e)
+                            log.warning("ping future for %s failed: %s", s.host, e)
                             rtt = None
                         s.record(rtt)
                         rows.append((ts, s.name, s.host, rtt))
@@ -265,6 +287,7 @@ class PingWorker(QObject):
                     _QT.msleep(50)
                     slept += 50
         finally:
+            pool.shutdown(wait=False, cancel_futures=True)
             if conn is not None:
                 try:
                     conn.close()

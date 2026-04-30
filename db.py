@@ -53,14 +53,24 @@ def connect() -> sqlite3.Connection:
 
 
 def init_db(retention_days: int = 7) -> None:
-    """Create tables if missing and prune rows older than `retention_days`."""
+    """Create tables if missing and prune rows older than `retention_days`.
+
+    `VACUUM` rewrites the entire DB and is expensive on multi-MB files, so
+    only run it when the prune actually freed a meaningful amount of space.
+    """
     conn = connect()
     try:
         conn.executescript(_SCHEMA)
         cutoff = time.time() - retention_days * 86400
-        conn.execute("DELETE FROM pings WHERE ts < ?;", (cutoff,))
-        conn.execute("DELETE FROM metrics WHERE ts < ?;", (cutoff,))
-        conn.execute("VACUUM;")
+        cur = conn.execute("DELETE FROM pings WHERE ts < ?;", (cutoff,))
+        deleted = cur.rowcount or 0
+        cur = conn.execute("DELETE FROM metrics WHERE ts < ?;", (cutoff,))
+        deleted += cur.rowcount or 0
+        # ~10k rows is a reasonable tradeoff: a day of dense pinging produces
+        # ~80k rows, so a daily startup after a long hiatus gets compacted,
+        # but normal restarts skip the rewrite.
+        if deleted >= 10_000:
+            conn.execute("VACUUM;")
     finally:
         conn.close()
 

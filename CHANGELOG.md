@@ -6,6 +6,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Pings now run in parallel within each round, so a slow or dead server no
+  longer delays the per-tick UI update.
+- `init_db` only runs `VACUUM` when a startup prune actually frees a
+  meaningful number of rows (≥10 000), shaving startup time on warm DBs.
+- Active-network-interface lookup is cached for 5 s — psutil's per-NIC
+  walk is expensive on machines with many virtual adapters.
+
+### Fixed
+- Layout teardown in `OverlayWindow._clear_layout` now orphans removed
+  widgets so they're actually destroyed, not just hidden — toggling
+  widgets repeatedly in Settings no longer accumulates dangling children.
+
 ## [1.0.0] - 2026-04-24
 
 Initial public release.

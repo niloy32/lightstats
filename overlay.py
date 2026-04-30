@@ -261,11 +261,17 @@ class OverlayWindow(QWidget):
     # --- layout build / teardown -------------------------------------------
 
     def _clear_layout(self, layout) -> None:
+        # `takeAt` removes the QLayoutItem from `layout`. We then orphan any
+        # widget so Qt actually destroys it (without setParent(None) widgets
+        # linger as children of the overlay until window close, which compounds
+        # every time the user toggles Settings checkboxes).
         while layout.count():
             item = layout.takeAt(0)
             w = item.widget()
             if w is not None:
+                w.setParent(None)
                 w.deleteLater()
+                continue
             sub = item.layout()
             if sub is not None:
                 self._clear_layout(sub)
